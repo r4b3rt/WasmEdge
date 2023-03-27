@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2019-2022 Second State INC
+
 //===-- wasmedge/common/types.h - Types definition ------------------------===//
 //
 // Part of the WasmEdge Project.
@@ -12,16 +14,31 @@
 //===----------------------------------------------------------------------===//
 #pragma once
 
+#include "common/enum_types.hpp"
+#include "common/errcode.h"
+#include "common/int128.h"
+#include "common/variant.h"
+
 #include <cstdint>
-#include <string>
 #include <type_traits>
-#include <unordered_map>
 #include <variant>
+#include <vector>
 
 namespace WasmEdge {
 
-using int128_t = __int128;
-using uint128_t = unsigned __int128;
+namespace {
+
+/// Remove const, reference, and volitile.
+template <typename T>
+using RemoveCVRefT = std::remove_cv_t<std::remove_reference_t<T>>;
+
+} // namespace
+
+// >>>>>>>> Type definitions >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+using Byte = uint8_t;
+
+/// SIMD types definition.
 using int64x2_t [[gnu::vector_size(16)]] = int64_t;
 using uint64x2_t [[gnu::vector_size(16)]] = uint64_t;
 using int32x4_t [[gnu::vector_size(16)]] = int32_t;
@@ -33,33 +50,6 @@ using uint8x16_t [[gnu::vector_size(16)]] = uint8_t;
 using doublex2_t [[gnu::vector_size(16)]] = double;
 using floatx4_t [[gnu::vector_size(16)]] = float;
 
-namespace {
-/// Remove const, reference, and volitile.
-template <typename T>
-using RemoveCVRefT = std::remove_cv_t<std::remove_reference_t<T>>;
-} // namespace
-
-/// Value types enumeration class.
-enum class ValType : uint8_t {
-  None = 0x40,
-  I32 = 0x7F,
-  I64 = 0x7E,
-  F32 = 0x7D,
-  F64 = 0x7C,
-  V128 = 0x7B,
-  FuncRef = 0x70,
-  ExternRef = 0x6F
-};
-
-static inline std::unordered_map<ValType, std::string> ValTypeStr = {
-    {ValType::None, "none"},       {ValType::I32, "i32"},
-    {ValType::I64, "i64"},         {ValType::F32, "f32"},
-    {ValType::F64, "f64"},         {ValType::V128, "v128"},
-    {ValType::FuncRef, "funcref"}, {ValType::ExternRef, "externref"}};
-
-/// Block type definition.
-using BlockType = std::variant<ValType, uint32_t>;
-
 /// UnknownRef definition.
 struct UnknownRef {
   uint64_t Value = 0;
@@ -67,61 +57,76 @@ struct UnknownRef {
 };
 
 /// FuncRef definition.
+namespace Runtime::Instance {
+class FunctionInstance;
+}
 struct FuncRef {
-  uint32_t NotNull = 0;
-  uint32_t Idx = 0;
+#if __INTPTR_WIDTH__ == 32
+  const uint32_t Padding = -1;
+#endif
+  const Runtime::Instance::FunctionInstance *Ptr = nullptr;
   FuncRef() = default;
-  FuncRef(uint32_t I) : NotNull(1), Idx(I) {}
+  FuncRef(const Runtime::Instance::FunctionInstance *P) : Ptr(P) {}
 };
 
 /// ExternRef definition.
 struct ExternRef {
+#if __INTPTR_WIDTH__ == 32
+  const uint32_t Padding = -1;
+#endif
   void *Ptr = nullptr;
   ExternRef() = default;
   template <typename T> ExternRef(T *P) : Ptr(reinterpret_cast<void *>(P)) {}
 };
 
-/// Number types enumeration class.
-enum class NumType : uint8_t {
-  I32 = 0x7F,
-  I64 = 0x7E,
-  F32 = 0x7D,
-  F64 = 0x7C,
-  V128 = 0x7B
+/// NumType and RefType variant definitions.
+using RefVariant = Variant<UnknownRef, FuncRef, ExternRef>;
+using ValVariant =
+    Variant<uint32_t, int32_t, uint64_t, int64_t, float, double, uint128_t,
+            int128_t, uint64x2_t, int64x2_t, uint32x4_t, int32x4_t, uint16x8_t,
+            int16x8_t, uint8x16_t, int8x16_t, floatx4_t, doublex2_t, UnknownRef,
+            FuncRef, ExternRef>;
+
+/// BlockType definition.
+struct BlockType {
+  enum class TypeEnum : uint8_t {
+    Empty,
+    ValType,
+    TypeIdx,
+  };
+  TypeEnum TypeFlag;
+  union {
+    ValType Type;
+    uint32_t Idx;
+  } Data;
+  BlockType() = default;
+  BlockType(ValType VType) { setData(VType); }
+  BlockType(uint32_t Idx) { setData(Idx); }
+  void setEmpty() { TypeFlag = TypeEnum::Empty; }
+  void setData(ValType VType) {
+    TypeFlag = TypeEnum::ValType;
+    Data.Type = VType;
+  }
+  void setData(uint32_t Idx) {
+    TypeFlag = TypeEnum::TypeIdx;
+    Data.Idx = Idx;
+  }
+  bool isEmpty() const { return TypeFlag == TypeEnum::Empty; }
+  bool isValType() const { return TypeFlag == TypeEnum::ValType; }
 };
+
+/// NumType and RefType conversions.
 inline constexpr ValType ToValType(const NumType Val) noexcept {
   return static_cast<ValType>(Val);
 }
-
-/// Reference types enumeration class.
-enum class RefType : uint8_t { ExternRef = 0x6F, FuncRef = 0x70 };
 inline constexpr ValType ToValType(const RefType Val) noexcept {
   return static_cast<ValType>(Val);
 }
 
-/// Value mutability enumeration class.
-enum class ValMut : uint8_t { Const = 0x00, Var = 0x01 };
+// <<<<<<<< Type definitions <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
-static inline std::unordered_map<ValMut, std::string> ValMutStr = {
-    {ValMut::Const, "const"}, {ValMut::Var, "var"}};
+// >>>>>>>> Const expressions to checking value types >>>>>>>>>>>>>>>>>>>>>>>>>>
 
-/// External type enumeration class.
-enum class ExternalType : uint8_t {
-  Function = 0x00U,
-  Table = 0x01U,
-  Memory = 0x02U,
-  Global = 0x03U
-};
-
-static inline std::unordered_map<ExternalType, std::string> ExternalTypeStr = {
-    {ExternalType::Function, "function"},
-    {ExternalType::Table, "table"},
-    {ExternalType::Memory, "memory"},
-    {ExternalType::Global, "global"}};
-
-///
-/// The following are const expressions to checking types.
-///
 /// Return true if Wasm unsign (uint32_t and uint64_t).
 template <typename T>
 struct IsWasmUnsign
@@ -216,16 +221,103 @@ toUnsigned(T Val) {
   return static_cast<MakeWasmUnsignedT<T>>(Val);
 }
 
-template <typename T> struct TypeToWasmType { using type = T; };
-template <> struct TypeToWasmType<int32_t> { using type = uint32_t; };
-template <> struct TypeToWasmType<int64_t> { using type = uint64_t; };
-template <> struct TypeToWasmType<int128_t> { using type = uint128_t; };
-template <> struct TypeToWasmType<int64x2_t> { using type = uint64x2_t; };
-template <> struct TypeToWasmType<int32x4_t> { using type = uint32x4_t; };
-template <> struct TypeToWasmType<int16x8_t> { using type = uint16x8_t; };
-template <> struct TypeToWasmType<int8x16_t> { using type = uint8x16_t; };
-template <typename T>
-using TypeToWasmTypeT =
-    typename std::enable_if_t<IsWasmValV<T>, typename TypeToWasmType<T>::type>;
+// <<<<<<<< Const expressions to checking value types <<<<<<<<<<<<<<<<<<<<<<<<<<
+
+// >>>>>>>> Template to get value type from type >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+template <typename T> inline ValType ValTypeFromType() noexcept;
+
+template <> inline ValType ValTypeFromType<uint32_t>() noexcept {
+  return ValType::I32;
+}
+template <> inline ValType ValTypeFromType<int32_t>() noexcept {
+  return ValType::I32;
+}
+template <> inline ValType ValTypeFromType<uint64_t>() noexcept {
+  return ValType::I64;
+}
+template <> inline ValType ValTypeFromType<int64_t>() noexcept {
+  return ValType::I64;
+}
+template <> inline ValType ValTypeFromType<uint128_t>() noexcept {
+  return ValType::V128;
+}
+template <> inline ValType ValTypeFromType<int128_t>() noexcept {
+  return ValType::V128;
+}
+template <> inline ValType ValTypeFromType<float>() noexcept {
+  return ValType::F32;
+}
+template <> inline ValType ValTypeFromType<double>() noexcept {
+  return ValType::F64;
+}
+template <> inline ValType ValTypeFromType<FuncRef>() noexcept {
+  return ValType::FuncRef;
+}
+template <> inline ValType ValTypeFromType<ExternRef>() noexcept {
+  return ValType::ExternRef;
+}
+
+// <<<<<<<< Template to get value type from type <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+// >>>>>>>> Const expression to generate value from value type >>>>>>>>>>>>>>>>>
+
+inline constexpr ValVariant ValueFromType(ValType Type) noexcept {
+  switch (Type) {
+  case ValType::I32:
+    return uint32_t(0U);
+  case ValType::I64:
+    return uint64_t(0U);
+  case ValType::F32:
+    return float(0.0F);
+  case ValType::F64:
+    return double(0.0);
+  case ValType::V128:
+    return uint128_t(0U);
+  case ValType::FuncRef:
+  case ValType::ExternRef:
+    return UnknownRef();
+  default:
+    assumingUnreachable();
+  }
+}
+
+// <<<<<<<< Const expression to generate value from value type <<<<<<<<<<<<<<<<<
+
+// >>>>>>>> Functions to retrieve reference inners >>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+inline constexpr bool isNullRef(const ValVariant &Val) {
+  return Val.get<UnknownRef>().Value == 0;
+}
+inline constexpr bool isNullRef(const RefVariant &Val) {
+  return Val.get<UnknownRef>().Value == 0;
+}
+
+inline const Runtime::Instance::FunctionInstance *
+retrieveFuncRef(const ValVariant &Val) {
+  return reinterpret_cast<const Runtime::Instance::FunctionInstance *>(
+      Val.get<FuncRef>().Ptr);
+}
+inline const Runtime::Instance::FunctionInstance *
+retrieveFuncRef(const RefVariant &Val) {
+  return reinterpret_cast<const Runtime::Instance::FunctionInstance *>(
+      Val.get<FuncRef>().Ptr);
+}
+inline const Runtime::Instance::FunctionInstance *
+retrieveFuncRef(const FuncRef &Val) {
+  return reinterpret_cast<const Runtime::Instance::FunctionInstance *>(Val.Ptr);
+}
+
+template <typename T> inline T &retrieveExternRef(const ValVariant &Val) {
+  return *reinterpret_cast<T *>(Val.get<ExternRef>().Ptr);
+}
+template <typename T> inline T &retrieveExternRef(const RefVariant &Val) {
+  return *reinterpret_cast<T *>(Val.get<ExternRef>().Ptr);
+}
+template <typename T> inline T &retrieveExternRef(const ExternRef &Val) {
+  return *reinterpret_cast<T *>(Val.Ptr);
+}
+
+// <<<<<<<< Functions to retrieve reference inners <<<<<<<<<<<<<<<<<<<<<<<<<<<<<
 
 } // namespace WasmEdge

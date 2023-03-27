@@ -1,3 +1,0 @@
-[workspace]
-members = ["wasmedge-sys"]
-exclude = ["build/", "utils/"]

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2019-2022 Second State INC
 
 wasmedge_add_library(wasmedgeLoaderFileMgr
   filemgr.cpp
@@ -21,13 +22,19 @@ if(NOT WIN32)
 endif()
 
 wasmedge_add_library(wasmedgeLoader
+  ast/module.cpp
+  ast/section.cpp
+  ast/description.cpp
+  ast/segment.cpp
+  ast/type.cpp
+  ast/expression.cpp
+  ast/instruction.cpp
   loader.cpp
 )
 
 target_link_libraries(wasmedgeLoader
   PUBLIC
   wasmedgeCommon
-  wasmedgeAST
   wasmedgeLoaderFileMgr
   Boost::boost
   std::filesystem

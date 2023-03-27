@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2019-2022 Second State INC
+
 //===-- wasmedge/aot/compiler.h - Compiler class definition ---------------===//
 //
 // Part of the WasmEdge Project.
@@ -12,10 +14,12 @@
 #pragma once
 
 #include "ast/module.h"
+#include "common/configure.h"
 #include "common/errcode.h"
 #include "common/filesystem.h"
-#include <cstdint>
-#include <string_view>
+#include "common/span.h"
+
+#include <mutex>
 
 namespace WasmEdge {
 namespace AOT {
@@ -27,6 +31,10 @@ public:
 
   Expect<void> compile(Span<const Byte> Data, const AST::Module &Module,
                        std::filesystem::path OutputPath);
+
+  struct CompileContext;
+
+private:
   void compile(const AST::ImportSection &ImportSection);
   void compile(const AST::ExportSection &ExportSection);
   void compile(const AST::TypeSection &TypeSection);
@@ -38,9 +46,7 @@ public:
   void compile(const AST::FunctionSection &FunctionSection,
                const AST::CodeSection &CodeSection);
 
-  struct CompileContext;
-
-private:
+  std::mutex Mutex;
   CompileContext *Context;
   const Configure Conf;
 };

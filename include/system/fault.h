@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2019-2022 Second State INC
+
 //===-- wasmedge/system/fault.h - Memory and arithmetic exception ---------===//
 //
 // Part of the WasmEdge Project.
@@ -13,6 +15,7 @@
 #pragma once
 
 #include "common/errcode.h"
+
 #include <csetjmp>
 
 namespace WasmEdge {
@@ -32,15 +35,6 @@ private:
   std::jmp_buf Buffer;
 };
 
-class FaultBlocker {
-public:
-  FaultBlocker() noexcept;
-  ~FaultBlocker() noexcept;
-
-private:
-  Fault *Prev = nullptr;
-};
-
 } // namespace WasmEdge
 
-#define PREPARE_FAULT(f) (static_cast<ErrCode>(setjmp((f).buffer())))
+#define PREPARE_FAULT(f) (static_cast<uint32_t>(setjmp((f).buffer())))

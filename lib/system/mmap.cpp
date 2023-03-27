@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2019-2022 Second State INC
+
 #include "system/mmap.h"
+
+#include "common/config.h"
 #include "common/defines.h"
-#include "config.h"
+
 #include <cstdint>
 #include <memory>
-#include <tuple>
+#include <utility>
 
 #ifdef HAVE_MMAP
 #include <fcntl.h>

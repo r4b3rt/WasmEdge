@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2019-2022 Second State INC
 
 wasmedge_add_library(wasmedgeVM
   vm.cpp
@@ -7,10 +8,10 @@ wasmedge_add_library(wasmedgeVM
 target_link_libraries(wasmedgeVM
   PUBLIC
   wasmedgeCommon
-  wasmedgeAST
+  wasmedgeSystem
+  wasmedgePlugin
   wasmedgeLoader
   wasmedgeValidator
-  wasmedgeInterpreter
+  wasmedgeExecutor
   wasmedgeHostModuleWasi
-  wasmedgeHostModuleWasmEdgeProcess
 )

@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: 2019-2022 Second State INC
 
 wasmedge_add_executable(wasiTests
   wasi.cpp
+  linuxTest.cpp
 )
 
 add_test(wasiTests wasiTests)
@@ -9,7 +11,6 @@ add_test(wasiTests wasiTests)
 target_link_libraries(wasiTests
   PRIVATE
   ${GTEST_BOTH_LIBRARIES}
-  wasmedgeAST
   wasmedgeHostModuleWasi
 )
 

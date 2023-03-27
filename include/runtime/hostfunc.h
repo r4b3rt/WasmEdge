@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2019-2022 Second State INC
+
 //===-- wasmedge/runtime/hostfunc.h - host function interface -------------===//
 //
 // Part of the WasmEdge Project.
@@ -11,11 +13,10 @@
 //===----------------------------------------------------------------------===//
 #pragma once
 
+#include "ast/type.h"
+#include "common/errcode.h"
 #include "common/span.h"
-#include "common/value.h"
-#include "instance/memory.h"
-#include "instance/type.h"
-#include "stackmgr.h"
+#include "common/types.h"
 
 #include <memory>
 #include <tuple>
@@ -24,6 +25,8 @@
 namespace WasmEdge {
 namespace Runtime {
 
+class CallingFrame;
+
 class HostFunctionBase {
 public:
   HostFunctionBase() = delete;
@@ -31,20 +34,18 @@ public:
   virtual ~HostFunctionBase() = default;
 
   /// Run host function body.
-  /// Note: memory instance from module may be nullptr. Need to check if want to
-  /// use it in function body.
-  virtual Expect<void> run(Instance::MemoryInstance *MemInst,
+  virtual Expect<void> run(const CallingFrame &CallFrame,
                            Span<const ValVariant> Args,
                            Span<ValVariant> Rets) = 0;
 
   /// Getter of function type.
-  const Instance::FType &getFuncType() const { return FuncType; }
+  const AST::FunctionType &getFuncType() const { return FuncType; }
 
   /// Getter of host function cost.
   uint64_t getCost() const { return Cost; }
 
 protected:
-  Instance::FType FuncType;
+  AST::FunctionType FuncType;
   const uint64_t Cost;
 };
 
@@ -54,27 +55,26 @@ public:
     initializeFuncType();
   }
 
-  Expect<void> run(Instance::MemoryInstance *MemInst,
-                   Span<const ValVariant> Args,
+  Expect<void> run(const CallingFrame &CallFrame, Span<const ValVariant> Args,
                    Span<ValVariant> Rets) override {
     using F = FuncTraits<decltype(&T::body)>;
     if (unlikely(F::ArgsN != Args.size())) {
-      return Unexpect(ErrCode::FuncSigMismatch);
+      return Unexpect(ErrCode::Value::FuncSigMismatch);
     }
     if (unlikely(F::RetsN != Rets.size())) {
-      return Unexpect(ErrCode::FuncSigMismatch);
+      return Unexpect(ErrCode::Value::FuncSigMismatch);
     }
-    return invoke(MemInst, Args.first<F::ArgsN>(), Rets.first<F::RetsN>());
+    return invoke(CallFrame, Args.first<F::ArgsN>(), Rets.first<F::RetsN>());
   }
 
 protected:
   template <typename SpanA, typename SpanR>
-  Expect<void> invoke(Instance::MemoryInstance *MemInst, SpanA &&Args,
+  Expect<void> invoke(const CallingFrame &CallFrame, SpanA &&Args,
                       SpanR &&Rets) {
     using F = FuncTraits<decltype(&T::body)>;
     using ArgsT = typename F::ArgsT;
 
-    auto GeneralArguments = std::tie(*static_cast<T *>(this), MemInst);
+    auto GeneralArguments = std::tie(*static_cast<T *>(this), CallFrame);
     auto ArgTuple = toTuple<ArgsT>(std::forward<SpanA>(Args),
                                    std::make_index_sequence<F::ArgsN>());
     auto FuncArgTuple =
@@ -95,10 +95,10 @@ protected:
   void initializeFuncType() {
     using F = FuncTraits<decltype(&T::body)>;
     using ArgsT = typename F::ArgsT;
-    FuncType.Params.reserve(F::ArgsN);
+    FuncType.getParamTypes().reserve(F::ArgsN);
     pushValType<ArgsT>(std::make_index_sequence<F::ArgsN>());
     if constexpr (F::hasReturn) {
-      FuncType.Returns.reserve(F::RetsN);
+      FuncType.getReturnTypes().reserve(F::RetsN);
       using RetsT = typename F::RetsT;
       pushRetType<RetsT>(std::make_index_sequence<F::RetsN>());
     }
@@ -111,7 +111,7 @@ private:
   };
   template <typename> struct FuncTraits;
   template <typename R, typename C, typename... A>
-  struct FuncTraits<Expect<R> (C::*)(Instance::MemoryInstance *, A...)> {
+  struct FuncTraits<Expect<R> (C::*)(const CallingFrame &, A...)> {
     using ArgsT = std::tuple<A...>;
     using RetsT = typename Wrap<R>::Type;
     static inline constexpr const std::size_t ArgsN = std::tuple_size_v<ArgsT>;
@@ -119,7 +119,7 @@ private:
     static inline constexpr const bool hasReturn = true;
   };
   template <typename C, typename... A>
-  struct FuncTraits<Expect<void> (C::*)(Instance::MemoryInstance *, A...)> {
+  struct FuncTraits<Expect<void> (C::*)(const CallingFrame &, A...)> {
     using ArgsT = std::tuple<A...>;
     static inline constexpr const std::size_t ArgsN = std::tuple_size_v<ArgsT>;
     static inline constexpr const std::size_t RetsN = 0;
@@ -143,14 +143,14 @@ private:
 
   template <typename Tuple, std::size_t... Indices>
   void pushValType(std::index_sequence<Indices...>) {
-    (FuncType.Params.push_back(
+    (FuncType.getParamTypes().push_back(
          ValTypeFromType<std::tuple_element_t<Indices, Tuple>>()),
      ...);
   }
 
   template <typename Tuple, std::size_t... Indices>
   void pushRetType(std::index_sequence<Indices...>) {
-    (FuncType.Returns.push_back(
+    (FuncType.getReturnTypes().push_back(
          ValTypeFromType<std::tuple_element_t<Indices, Tuple>>()),
      ...);
   }

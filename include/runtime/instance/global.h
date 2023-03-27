@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2019-2022 Second State INC
+
 //===-- wasmedge/runtime/instance/global.h - Global Instance definition ---===//
 //
 // Part of the WasmEdge Project.
@@ -11,8 +13,7 @@
 //===----------------------------------------------------------------------===//
 #pragma once
 
-#include "common/types.h"
-#include "common/value.h"
+#include "ast/type.h"
 
 namespace WasmEdge {
 namespace Runtime {
@@ -21,28 +22,23 @@ namespace Instance {
 class GlobalInstance {
 public:
   GlobalInstance() = delete;
-  GlobalInstance(const ValType ValueType, const ValMut Mutibility,
-                 const ValVariant Val = uint32_t(0)) noexcept
-      : Type(ValueType), Mut(Mutibility), Value(Val) {}
-  virtual ~GlobalInstance() = default;
+  GlobalInstance(const AST::GlobalType &GType,
+                 ValVariant Val = uint32_t(0)) noexcept
+      : GlobType(GType), Value(Val) {}
 
-  /// Getter the global value type.
-  ValType getValType() const { return Type; }
-
-  /// Getter the global mutation.
-  ValMut getValMut() const { return Mut; }
+  /// Getter of global type.
+  const AST::GlobalType &getGlobalType() const noexcept { return GlobType; }
 
   /// Getter of value.
-  const ValVariant &getValue() const { return Value; }
+  const ValVariant &getValue() const noexcept { return Value; }
 
   /// Getter of value.
-  ValVariant &getValue() { return Value; }
+  ValVariant &getValue() noexcept { return Value; }
 
 private:
   /// \name Data of global instance.
   /// @{
-  const ValType Type;
-  const ValMut Mut;
+  AST::GlobalType GlobType;
   ValVariant Value;
   /// @}
 };
