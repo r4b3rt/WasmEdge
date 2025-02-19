@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2019-2024 Second State INC
+
 //===-- wasmedge/loader/shared_library.h - Shared library definition ------===//
 //
 // Part of the WasmEdge Project.
@@ -11,108 +13,96 @@
 ///
 //===----------------------------------------------------------------------===//
 #pragma once
-#include "common/defines.h"
-#include "common/errcode.h"
-#include "common/filesystem.h"
-#include <memory>
 
-#if WASMEDGE_OS_WINDOWS
-#include <boost/winapi/dll.hpp>
-#endif
+#include "ast/section.h"
+#include "common/executable.h"
+#include "common/filesystem.h"
+#include "system/winapi.h"
+
+#include <cstdint>
+#include <memory>
+#include <vector>
 
 namespace WasmEdge {
 namespace Loader {
 
-class SharedLibrary;
-
-/// Holder class for library symbol
-template <typename T = void> class Symbol {
-private:
-  friend class SharedLibrary;
-  template <typename> friend class Symbol;
-
-  Symbol(std::shared_ptr<SharedLibrary> H, T *S) noexcept
-      : Library(std::move(H)), Pointer(S) {}
-
-public:
-  Symbol() = default;
-  Symbol(const Symbol &) = default;
-  Symbol &operator=(const Symbol &) = default;
-  Symbol(Symbol &&) = default;
-  Symbol &operator=(Symbol &&) = default;
-
-  operator bool() const noexcept { return Pointer != nullptr; }
-  auto &operator*() const noexcept { return *Pointer; }
-  auto operator->() const noexcept { return Pointer; }
-
-  template <typename... ArgT>
-  auto operator()(ArgT... Args) const
-      noexcept(noexcept(this->Pointer(std::forward<ArgT>(Args)...))) {
-    return Pointer(std::forward<ArgT>(Args)...);
-  }
-
-  auto get() const noexcept { return Pointer; }
-  auto deref() & { return Symbol<std::remove_pointer_t<T>>(Library, *Pointer); }
-  auto deref() && {
-    return Symbol<std::remove_pointer_t<T>>(std::move(Library), *Pointer);
-  }
-
-private:
-  std::shared_ptr<SharedLibrary> Library;
-  T *Pointer = nullptr;
-};
-
-template <typename T> class Symbol<T[]> {
-private:
-  friend class SharedLibrary;
-  template <typename> friend class Symbol;
-
-  Symbol(std::shared_ptr<SharedLibrary> H, T (*S)[]) noexcept
-      : Library(std::move(H)), Pointer(*S) {}
-
-public:
-  Symbol() = default;
-  Symbol(const Symbol &) = default;
-  Symbol &operator=(const Symbol &) = default;
-  Symbol(Symbol &&) = default;
-  Symbol &operator=(Symbol &&) = default;
-
-  operator bool() const noexcept { return Pointer != nullptr; }
-  auto &operator[](size_t Index) const noexcept { return Pointer[Index]; }
-
-  auto get() const noexcept { return Pointer; }
-  auto index(size_t Index) & { return Symbol<T>(Library, &Pointer[Index]); }
-  auto index(size_t Index) && {
-    return Symbol<T>(std::move(Library), &Pointer[Index]);
-  }
-
-private:
-  std::shared_ptr<SharedLibrary> Library;
-  T *Pointer = nullptr;
-};
-
 /// Holder class for library handle
-class SharedLibrary : public std::enable_shared_from_this<SharedLibrary> {
-  SharedLibrary(const SharedLibrary &) = delete;
-  SharedLibrary &operator=(const SharedLibrary &) = delete;
-  SharedLibrary(SharedLibrary &&) = delete;
-  SharedLibrary &operator=(SharedLibrary &&) = delete;
-
+class SharedLibrary : public Executable {
 public:
 #if WASMEDGE_OS_WINDOWS
-  using NativeHandle = boost::winapi::HMODULE_;
+  using NativeHandle = winapi::HMODULE_;
 #else
   using NativeHandle = void *;
 #endif
 
   SharedLibrary() noexcept = default;
-  ~SharedLibrary() noexcept { unload(); }
+  ~SharedLibrary() noexcept override { unload(); }
   Expect<void> load(const std::filesystem::path &Path) noexcept;
   void unload() noexcept;
 
+  Symbol<const IntrinsicsTable *> getIntrinsics() noexcept override {
+    return get<const IntrinsicsTable *>("intrinsics");
+  }
+
+  std::vector<Symbol<Wrapper>> getTypes(size_t Size) noexcept override {
+    using namespace std::literals;
+    std::vector<Symbol<Wrapper>> Result;
+    Result.reserve(Size);
+    for (size_t I = 0; I < Size; ++I) {
+      // "t" prefix is for type helper function
+      const std::string Name = fmt::format("t{}"sv, I);
+      if (auto Symbol = get<Wrapper>(Name.c_str())) {
+        Result.push_back(std::move(Symbol));
+      }
+    }
+
+    return Result;
+  }
+
+  std::vector<Symbol<void>> getCodes(size_t Offset,
+                                     size_t Size) noexcept override {
+    using namespace std::literals;
+    std::vector<Symbol<void>> Result;
+    Result.reserve(Size);
+    for (size_t I = 0; I < Size; ++I) {
+      // "f" prefix is for code function
+      const std::string Name = fmt::format("f{}"sv, I + Offset);
+      if (auto Symbol = get<void>(Name.c_str())) {
+        Result.push_back(std::move(Symbol));
+      }
+    }
+
+    return Result;
+  }
+
+  /// Read embedded Wasm binary.
+  Expect<std::vector<Byte>> getWasm() noexcept {
+    const auto Size = get<uint32_t>("wasm.size");
+    if (unlikely(!Size)) {
+      spdlog::error(ErrCode::Value::IllegalGrammar);
+      return Unexpect(ErrCode::Value::IllegalGrammar);
+    }
+    const auto Code = get<uint8_t>("wasm.code");
+    if (unlikely(!Code)) {
+      spdlog::error(ErrCode::Value::IllegalGrammar);
+      return Unexpect(ErrCode::Value::IllegalGrammar);
+    }
+
+    return std::vector<Byte>(Code.get(), Code.get() + *Size);
+  }
+
+  /// Read wasmedge version.
+  Expect<uint32_t> getVersion() noexcept {
+    const auto Version = get<uint32_t>("version");
+    if (unlikely(!Version)) {
+      spdlog::error(ErrCode::Value::IllegalGrammar);
+      return Unexpect(ErrCode::Value::IllegalGrammar);
+    }
+    return *Version;
+  }
+
   template <typename T> Symbol<T> get(const char *Name) {
-    return Symbol<T>(shared_from_this(),
-                     reinterpret_cast<T *>(getSymbolAddr(Name)));
+    return createSymbol<T>(reinterpret_cast<T *>(getSymbolAddr(Name)));
   }
 
 private:

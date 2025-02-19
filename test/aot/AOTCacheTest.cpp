@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2019-2024 Second State INC
+
 //===-- wasmedge/test/aot/AOTCacheTest.cpp - aot cache unit tests ---------===//
 //
 // Part of the WasmEdge Project.
@@ -11,10 +13,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "aot/cache.h"
-#include "common/config.h"
-#include "common/span.h"
-#include "gtest/gtest.h"
-#include <vector>
+
+#include "common/filesystem.h"
+
+#include <gtest/gtest.h>
+#include <string>
+#include <string_view>
+#include <system_error>
 
 namespace {
 
