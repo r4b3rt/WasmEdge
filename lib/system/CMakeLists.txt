@@ -1,16 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
-
-include(CheckCXXSymbolExists)
-check_cxx_symbol_exists(mmap sys/mman.h HAVE_MMAP)
-include(CheckIncludeFileCXX)
-CHECK_INCLUDE_FILE_CXX(pwd.h HAVE_PWD_H)
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h)
+# SPDX-FileCopyrightText: 2019-2024 Second State INC
 
 wasmedge_add_library(wasmedgeSystem
   allocator.cpp
   fault.cpp
   mmap.cpp
   path.cpp
+  stacktrace.cpp
 )
 
 target_include_directories(wasmedgeSystem
@@ -21,5 +17,11 @@ target_include_directories(wasmedgeSystem
 target_link_libraries(wasmedgeSystem
   PUBLIC
   wasmedgeCommon
-  Boost::boost
 )
+
+if(WIN32)
+  target_link_libraries(wasmedgeSystem
+    PRIVATE
+    dbghelp
+  )
+endif()

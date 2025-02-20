@@ -1,34 +1,41 @@
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2019-2024 Second State INC
+
 #include "loader/shared_library.h"
-#include "common/defines.h"
-#include "common/log.h"
+#include "common/spdlog.h"
+
+#include <algorithm>
+#include <cerrno>
+#include <cstdint>
+#include <cstring>
+#include <tuple>
+#include <utility>
 
 #if WASMEDGE_OS_WINDOWS
-#include <boost/winapi/dll.hpp>
-#include <boost/winapi/error_handling.hpp>
-#include <boost/winapi/local_memory.hpp>
-namespace winapi = boost::winapi;
+#include "system/winapi.h"
 #elif WASMEDGE_OS_LINUX || WASMEDGE_OS_MACOS
 #include <dlfcn.h>
 #else
 #error Unsupported os!
 #endif
 
-namespace WasmEdge {
-namespace Loader {
+using namespace std::literals;
 
-/// Open so file. See "include/loader/shared_library.h".
+namespace WasmEdge::Loader {
+
+// Open so file. See "include/loader/shared_library.h".
 Expect<void> SharedLibrary::load(const std::filesystem::path &Path) noexcept {
 #if WASMEDGE_OS_WINDOWS
-  Handle = winapi::load_library_ex(Path.c_str(), nullptr, 0);
+  Handle = winapi::LoadLibraryExW(Path.c_str(), nullptr, 0);
 #else
   Handle = ::dlopen(Path.c_str(), RTLD_LAZY | RTLD_LOCAL);
 #endif
   if (!Handle) {
+    spdlog::error(ErrCode::Value::IllegalPath);
 #if WASMEDGE_OS_WINDOWS
     const auto Code = winapi::GetLastError();
     winapi::LPSTR_ ErrorText = nullptr;
-    if (winapi::format_message(winapi::FORMAT_MESSAGE_FROM_SYSTEM_ |
+    if (winapi::FormatMessageA(winapi::FORMAT_MESSAGE_FROM_SYSTEM_ |
                                    winapi::FORMAT_MESSAGE_ALLOCATE_BUFFER_ |
                                    winapi::FORMAT_MESSAGE_IGNORE_INSERTS_,
                                nullptr, Code,
@@ -36,15 +43,15 @@ Expect<void> SharedLibrary::load(const std::filesystem::path &Path) noexcept {
                                                    winapi::SUBLANG_DEFAULT_),
                                reinterpret_cast<winapi::LPSTR_>(&ErrorText), 0,
                                nullptr)) {
-      spdlog::error("load library failed:{}", ErrorText);
+      spdlog::error("    load library failed:{}"sv, ErrorText);
       winapi::LocalFree(ErrorText);
     } else {
-      spdlog::error("load library failed:{:x}", Code);
+      spdlog::error("    load library failed:{:x}"sv, Code);
     }
 #else
-    spdlog::error("load library failed:{}", ::dlerror());
+    spdlog::error("    load library failed:{}"sv, ::dlerror());
 #endif
-    return Unexpect(ErrCode::InvalidPath);
+    return Unexpect(ErrCode::Value::IllegalPath);
   }
   return {};
 }
@@ -52,7 +59,7 @@ Expect<void> SharedLibrary::load(const std::filesystem::path &Path) noexcept {
 void SharedLibrary::unload() noexcept {
   if (Handle) {
 #if WASMEDGE_OS_WINDOWS
-    boost::winapi::FreeLibrary(Handle);
+    winapi::FreeLibrary(Handle);
 #else
     ::dlclose(Handle);
 #endif
@@ -65,12 +72,10 @@ void *SharedLibrary::getSymbolAddr(const char *Name) const noexcept {
     return nullptr;
   }
 #if WASMEDGE_OS_WINDOWS
-  return reinterpret_cast<void *>(
-      boost::winapi::get_proc_address(Handle, Name));
+  return reinterpret_cast<void *>(winapi::GetProcAddress(Handle, Name));
 #else
   return ::dlsym(Handle, Name);
 #endif
 }
 
-} // namespace Loader
-} // namespace WasmEdge
+} // namespace WasmEdge::Loader

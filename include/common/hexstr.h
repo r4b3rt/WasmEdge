@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+// SPDX-FileCopyrightText: 2019-2024 Second State INC
+
 //===-- wasmedge/common/hexstr.h - Hex string formation -------------------===//
 //
 // Part of the WasmEdge Project.
@@ -11,8 +13,9 @@
 //===----------------------------------------------------------------------===//
 #pragma once
 
-#include "span.h"
+#include "common/span.h"
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
